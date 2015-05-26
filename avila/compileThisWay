@@ -1,0 +1,4 @@
+#!/bin/bash
+
+gcc -c ./sub20init.c
+gcc ./*.o ../lib/libsub.o -lusb-1.0 -lm
