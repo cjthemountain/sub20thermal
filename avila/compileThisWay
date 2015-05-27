@@ -1,4 +1,9 @@
 #!/bin/bash
 
-gcc -c ./sub20init.c
-gcc ./*.o ../lib/libsub.o -lusb-1.0 -lm
+gcc -c ./sign_magnitude.c
+gcc -c ./locked_antiphase.c
+gcc -c ./sub20_init.c
+gcc ./sign_magnitude.o ../lib/libsub.o -lusb-1.0 -lm -o sign_magnitude
+gcc ./locked_antiphase.o ../lib/libsub.o -lusb-1.0 -lm -o locked_antiphase
+gcc ./sub20_init.o ../lib/libsub.o -lusb-1.0 -lm -o sub20init
+

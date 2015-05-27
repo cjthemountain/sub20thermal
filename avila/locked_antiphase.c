@@ -11,7 +11,7 @@ sub_device dev = NULL;
 sub_handle handle = NULL;
 int pwm_res = 20; //microseconds
 int pwm_limit = 255; //8bit, 100% duty cycle
-int motor_dir,i,j,adc_buff[8],adc_mux[8],rc,config,found=0,serial_number=0,stat;
+int cont,op_mode,motor_dir,i,j,adc_buff[8],adc_mux[8],rc,rca,config,found=0,serial_number=0,stat;
 char sn_buff[20], pid_buff[20];
 double volts[8], celcius[4];
 
@@ -94,21 +94,58 @@ int init_sub(){
 	printf("device configured\n");
 	return 0;
 }
+
 int main(){
+	printf("locked antiphase operation\n");
 	if ((stat=init_sub())!=0)
 		printf("ERROR:%d, Failed to configure device\n", stat);
 
 	sub_pwm_set(handle,3,255); //set pwm signal on hp=12,gpio=27
 	sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
-
-	while (1) {
+	
+	cont=0;
+	while (cont==0) {
 		get_temps();
+		printf("tc0:%f\ttc1:%f\ttc2:%f\ttc3:%f\n", celcius[0],celcius[1],celcius[2],celcius[3]);
+		usleep(250000);
+		op_mode = getchar();
+		getchar(); //eats the newline
+		switch(op_mode){
+			case '1':
+				rca = sub_pwm_set(handle,3,0); //set pwm signal on hp=12,gpio=27
+				rc = sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
+				printf("pwm @ 0  \tdir high\tsuccess:%d%d\n",rca,rc);
+				break;
+			case '2':
+				rca = sub_pwm_set(handle,3,63); //set pwm signal on hp=12,gpio=27
+				rc = sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
+				printf("pwm @ 63 \tdir high\tsuccess:%d%d\n",rca,rc);
+				break;
+			case '3':
+				rca = sub_pwm_set(handle,3,127); //set pwm signal on hp=12,gpio=27
+				rc = sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
+				printf("pwm @ 127\tdir high\tsuccess:%d%d\n",rca,rc);
+				break;
+			case '4':
+				rca = sub_pwm_set(handle,3,190); //set pwm signal on hp=12,gpio=27
+				rc = sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
+				printf("pwm @ 190\tdir high\tsuccess:%d%d\n",rca,rc);
+				break;
+			case '5':
+				rca = sub_pwm_set(handle,3,255); //set pwm signal on hp=12,gpio=27
+				rc = sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
+				printf("pwm @ 255\tdir high\tsuccess:%d%d\n",rca,rc);
+				break;
+			case 'q':
+				cont = 1;
+				break;
+			default:
+				cont=0;
+		}
 		if (celcius[0]>70 || celcius[1]>70){ 
 			//sub_gpio_write(handle,0x00000000,&config,0xFFFFFFFF);//set everything low
 			sub_pwm_set(handle,3,0);
 		}
-		printf("tc0:%f\ttc1:%f\ttc2:%f\ttc3:%f\n", celcius[0],celcius[1],celcius[2],celcius[3]);
-		sleep(1);
 	}
 
 	sub_close(handle);
