@@ -51,9 +51,13 @@ int init_sub(){
     printf("config: %08x\n",config);
     }
     printf("device configured\n");
+    return 0;
 }
 
 int main(){
+    if (init_sub()!=0)
+        printf("ERROR: could not configure device\n");
+    cont=0;
     while(cont!=1){
 	    op_mode = getchar();
 		getchar();
