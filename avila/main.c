@@ -37,16 +37,18 @@ int init_sub(){
         return -3;
     }
     printf("product id:\t%s\n", pid_buff);
+    //configure analog circuits
     config = ADC_ENABLE;
     config|=ADC_REF_VCC;
     if ( (rc = sub_adc_config(handle, config)) !=0){
             printf("ERROR: couldn't set ADC flag\n");
             return -4;
     }
+    //configure pwm
     if ( (rc=sub_pwm_config(handle,pwm_res,pwm_limit))!=0 ){
             printf("ERROR: can't configure PWM\n");
             return -6;
-    } else {
+    } else {//configure output gpio (dir and pwm signal pins)
     sub_gpio_config(handle,0x08001000,&config,0xFFFFFFFF);
     printf("config: %08x\n",config);
     }
@@ -54,44 +56,38 @@ int init_sub(){
     return 0;
 }
 
+int user_input(){
+    scanf("%d",&op_mode);
+    if (-255<=op_mode && op_mode<=255){
+        return op_mode;
+    }
+    
+    printf("invalid value for pwm signal. no chance made\n");
+    return -1000;
+}
+
 int main(){
     if (init_sub()!=0)
         printf("ERROR: could not configure device\n");
     cont=0;
+
     while(cont!=1){
-	    op_mode = getchar();
-		getchar();
-		switch(op_mode){
-			case '1'://set pwm signal on hp=12,gpio=27
-				rca = sub_pwm_set(handle,3,0); 
-				break;
-			case '2'://set pwm signal on hp=12,gpio=27
-				rca = sub_pwm_set(handle,3,63); 
-				break;
-			case '3'://set pwm signal on hp=12,gpio=27
-				rca = sub_pwm_set(handle,3,127); 
-				break;
-			case '4'://set pwm signal on hp=12,gpio=27
-
-				rca = sub_pwm_set(handle,3,190); 				
-                break;
-			case '5'://set pwm signal on hp=12,gpio=27
-				rca = sub_pwm_set(handle,3,255); 
-				break;
-			case 'a': //set dir on gpio12,hp5 high
-				rc = sub_gpio_write(handle,0x00001000,&config,0x00001000);
-				break;
-			case 's'://set dir on gpio12,hp5 low
-				rc = sub_gpio_write(handle,0x00000000,&config,0x00001000);
-				break;
-			case 'q'://exit
-				cont=1;
-				break;
-			default://continue
-				cont=0;
-		}
-		printf("case:%d\tsuccess:%d%d config:0x%08x\n",op_mode,rca,rc,config);
+        user_input();
+        //set pwm
+        if (-255<=op_mode && op_mode <=255)
+            rca = sub_pwm_set(handle,3,abs(op_mode));
+        else
+            printf("error: you entered a value out of range [-255,255]\n");           
+        //set dir
+        if (op_mode<0){
+            printf("negative op_mode\n");
+            rc = sub_gpio_write(handle,0x00001000,&config,0x00001000);
+        }
+        if (op_mode>0){
+            printf("positive op_mode\n");
+            rc = sub_gpio_write(handle,0x00000000,&config,0x00001000);
+        }
+        printf("op_mode:%d\tconfig:0x%08x\trc:%d\trca:%d\n",op_mode,config,rc,rca);
 	}
-
-        return 0;
+    return 0;
 }
