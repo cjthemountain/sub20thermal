@@ -10,6 +10,6 @@
 #gcc ./foo.o ../lib/libsub.o -lusb-1.0 -lm -o foo
 
 gcc -c main.c
-gcc ./main.o ../lib/libsub.o -lusb-1.0 -lm -o main
+gcc -std=c11 -pedantic -Wall -Wextra ./main.o ../lib/libsub.o -lusb-1.0 -lm -o main
 
 
