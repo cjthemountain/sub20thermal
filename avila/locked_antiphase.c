@@ -113,27 +113,27 @@ int main(){
 		switch(op_mode){
 			case '1':
 				rca = sub_pwm_set(handle,3,0); //set pwm signal on hp=12,gpio=27
-				rc = sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
+				rc = sub_gpio_write(handle,0x00001000,&config,0x00001000); //set dir to high
 				printf("pwm @ 0  \tdir high\tsuccess:%d%d\n",rca,rc);
 				break;
 			case '2':
 				rca = sub_pwm_set(handle,3,63); //set pwm signal on hp=12,gpio=27
-				rc = sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
+				rc = sub_gpio_write(handle,0x00001000,&config,0x080001000); //set dir to high
 				printf("pwm @ 63 \tdir high\tsuccess:%d%d\n",rca,rc);
 				break;
 			case '3':
 				rca = sub_pwm_set(handle,3,127); //set pwm signal on hp=12,gpio=27
-				rc = sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
+				rc = sub_gpio_write(handle,0x00001000,&config,0x00001000); //set dir to high
 				printf("pwm @ 127\tdir high\tsuccess:%d%d\n",rca,rc);
 				break;
 			case '4':
 				rca = sub_pwm_set(handle,3,190); //set pwm signal on hp=12,gpio=27
-				rc = sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
+				rc = sub_gpio_write(handle,0x00001000,&config,0x00001000); //set dir to high
 				printf("pwm @ 190\tdir high\tsuccess:%d%d\n",rca,rc);
 				break;
 			case '5':
 				rca = sub_pwm_set(handle,3,255); //set pwm signal on hp=12,gpio=27
-				rc = sub_gpio_write(handle,0x08000000,&config,0x08000000); //set dir to high
+				rc = sub_gpio_write(handle,0x00001000,&config,0x00001000); //set dir to high
 				printf("pwm @ 255\tdir high\tsuccess:%d%d\n",rca,rc);
 				break;
 			case 'q':
