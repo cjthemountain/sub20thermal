@@ -11,13 +11,50 @@
 
 int pwm_res = 20; //microseconds
 int pwm_limit = 255; //8bit, 100% duty cycle
-int foo,cont,op_mode,motor_dir,i,j,adc_buff[8],adc_mux[8],rc,rca,rcp,config,found=0,serial_number=0,stat;
+int cont,op_mode,motor_dir,i,j,adc_buff[8],adc_mux[8],rc,rca,rcp,config,found=0,serial_number=0,stat,z;
+double volta, voltb, prop, integ, deriv, t_des;
 char sn_buff[20], pid_buff[20];
-double volts[8], celcius[4];
+double celcius[4], old_celcius[4];
 struct timeval timeout;
 fd_set set;
 sub_device dev = NULL;
 sub_handle handle = NULL;
+
+int pid(){ //bang bang control
+    if (t_des > celcius[2])
+       op_mode = 255;
+    else if (t_des < celcius[2])
+        op_mode = -255;
+    return op_mode;
+}
+
+int analog_2_celcius(int *adc_buff){
+    for (i=0;i<8;i++){
+        old_celcius[i] = celcius[i];
+    }
+    i=0; j=0;
+    while (i<6){
+        volta =   (((double)adc_buff[i]))*3.3/1023;
+        voltb = (((double)adc_buff[i+1]))*3.3/1023;
+        celcius[j] =   ((volta-voltb)-1.245)/.005;
+        i+=2; j+=1;
+    }
+    return 0;
+}
+
+int analog_2_celcius2(){
+    celcius[0] = ((double)adc_buff[0])*.58496;
+    celcius[1] = ((double)adc_buff[2])*.58496;
+    celcius[2] = ((double)adc_buff[4])*.58496;
+}
+
+int user_input(){
+    scanf("%lf",&t_des);
+    t_des = 1.2924*t_des-3.5177; //best fit line from uncalibrated thermometer study
+    integ = 0;
+    prop=0;
+    return 0;
+}
 
 int init_sub(){
     memset(sn_buff, 0, 20);
@@ -44,6 +81,7 @@ int init_sub(){
     //configure analog circuits
     config = ADC_ENABLE;
     config|=ADC_REF_VCC;
+    //config|=ADC_REF_2_56;
     if ( (rc = sub_adc_config(handle, config)) !=0){
             printf("ERROR: couldn't set ADC flag\n");
             return -4;
@@ -67,66 +105,65 @@ int init_sub(){
     }
     printf("device configured\n");
 
+    //setup for select (polling)
     FD_ZERO(&set);
     FD_SET(STDIN_FILENO,&set);
     timeout.tv_sec = 1;
     timeout.tv_usec= 0;
     printf("setup done, sec:%ld, usec:%ld\n",timeout.tv_sec,timeout.tv_usec);
-        
+
+    //setup for PID
+    prop = 0.0;
+    deriv = 0.0;
+    integ = 0.0;
+
+    //initialize celcius values    
+    rca = sub_adc_read(handle,adc_buff,adc_mux,8);
+    analog_2_celcius(adc_buff);
+    t_des = 24.0; //loosely room temperature
     return 0;
-}
-
-int user_input(){
-    scanf("%d",&op_mode);
-    if (-255<=op_mode && op_mode<=255){
-        return op_mode;
-    }
-    
-    printf("invalid value for pwm signal. no chance made\n");
-    return -1000;
-}
-
-double convert2celcius(){
-    //printf("error: could not convert to celcius\n");
-    return -9999.0;
 }
 
 int main(){
     if (init_sub()!=0)
         printf("ERROR: could not configure device\n");
-    //printf("stdin #=%d\tFD_SETSIZE:%d\n", STDIN_FILENO,FD_SETSIZE); 
-
     cont=0;
+    z = 0;
     while(cont!=1){
+        z+=1;
         timeout.tv_sec = 0;
-        timeout.tv_usec= 100000;
+        timeout.tv_usec= 10000;
         FD_SET(STDIN_FILENO,&set);
-        if (select(STDIN_FILENO+1,&set,NULL,NULL,&timeout)==1){//if user input waiting, deal with it
-            printf("\n\ncaught user trigger, foo: %d\n\n",foo);//be loud about it
+        if (select(STDIN_FILENO+1,&set,NULL,NULL,&timeout)==1)
             user_input();
-            //set pwm
-            if (-255<=op_mode && op_mode <=255)
-                rcp = sub_pwm_set(handle,3,abs(op_mode));
-            else
-                printf("error: you entered a value out of range [-255,255]\n");           
-            //set dir
-            if (op_mode<0){
-                printf("negative op_mode\n");
-                rc = sub_gpio_write(handle,0x00001000,&config,0x00001000);
-            }
-            if (op_mode>0){
-                printf("positive op_mode\n");
-                rc = sub_gpio_write(handle,0x00000000,&config,0x00001000);
-            }
-        }//otherwise, read temps and loop
+        pid(); 
+        rcp = sub_pwm_set(handle,3,abs(op_mode));
+        if (op_mode>0) 
+            rc = sub_gpio_write(handle,0x00001000,&config,0x00001000);
+        else if (op_mode < 0)
+            rc = sub_gpio_write(handle,0x00000000,&config,0x00001000);
         rca = sub_adc_read(handle,adc_buff,adc_mux,8);
-        convert2celcius();
-        //printf("op_mode:%d\tconfig:0x%08x\trc:%d\trcp:%d\trca:%d\n",op_mode,config,rc,rcp,rca);
-
-        for (i=0;i<8;i++){
-            printf("%d\t",adc_buff[i]);
+        analog_2_celcius(adc_buff);
+        //analog_2_celcius2(adc_buff);
+        if (z%10==0){
+            system("clear");
+            printf("p: %f\t i:%f\t d:%f\te:%f\n",prop,integ,deriv,(t_des-celcius[0]));
+            printf("t_des: %.1f\tpower: %d\tt0:%.1fC\tt1:%.1fC\tt2:%.1fC\n\n",t_des, op_mode, celcius[0], celcius[1],celcius[2]);
+            for (i=0;i<8;i++){
+                printf("%d\t",adc_buff[i]);
+            }
+            printf("\n");
         }
-        printf("\n\n");
+        
+        if (celcius[0] > 80 || celcius[1] > 80 || celcius[2] > 40){
+                rcp = sub_pwm_set(handle,3,abs(op_mode));
+                printf("over 30 degrees celcius. setting pwm to 0...");
+                if (rcp!=0)
+                    printf("CUT POWER IMMEDIATELY!!!!!!!!!!!! failure to change pwm cycle\n");
+                else 
+                    printf("done. PWM=0\n");
+        }
+        
 	}
     return 0;
 }
