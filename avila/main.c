@@ -12,20 +12,36 @@
 int pwm_res = 20; //microseconds
 int pwm_limit = 255; //8bit, 100% duty cycle
 int cont,op_mode,motor_dir,i,j,adc_buff[8],adc_mux[8],rc,rca,rcp,config,found=0,serial_number=0,stat,z;
-double volta, voltb, prop, integ, deriv, t_des;
+double volta, voltb, prop, integ, deriv, t_des, t_set;
 char sn_buff[20], pid_buff[20];
 double celcius[4], old_celcius[4];
 struct timeval timeout;
+char filepath[1024];
+FILE *fptr;
 fd_set set;
 sub_device dev = NULL;
 sub_handle handle = NULL;
 
-int pid(){ //bang bang control
-    if (t_des > celcius[2])
+int bang_bang(){ //bang bang control
+    if (t_set > celcius[2])
        op_mode = 255;
-    else if (t_des < celcius[2])
+    else if (t_set < celcius[2])
         op_mode = -255;
     return op_mode;
+}
+
+int pid(){ //bang bang control
+	//just integral for now
+	integ += pow((t_des - celcius[2]),2);//always positive
+	if ((t_des - celcius[2]) > 0)
+		integ = abs(integ); 
+	else
+		integ = abs(integ)*-1;
+	op_mode = ((int)floor(integ));
+	if (op_mode > 255)
+		op_mode=255;
+	else if (op_mode < -255)
+		op_mode = -255;
 }
 
 int analog_2_celcius(int *adc_buff){
@@ -50,9 +66,11 @@ int analog_2_celcius2(){
 
 int user_input(){
     scanf("%lf",&t_des);
-    t_des = 1.2924*t_des-3.5177; //best fit line from uncalibrated thermometer study
+    t_set = 1.2924*t_des-3.5177; //best fit line from uncalibrated thermometer study
     integ = 0;
     prop=0;
+	deriv = 0;
+	fprintf(fptr,"\nset t_des to %f\n\n",t_des);
     return 0;
 }
 
@@ -120,7 +138,24 @@ int init_sub(){
     //initialize celcius values    
     rca = sub_adc_read(handle,adc_buff,adc_mux,8);
     analog_2_celcius(adc_buff);
-    t_des = 24.0; //loosely room temperature
+    rca = sub_adc_read(handle,adc_buff,adc_mux,8);
+    analog_2_celcius(adc_buff);
+    t_des = celcius[2];
+	t_set = 1.2924*celcius[2]-3.5177; 
+	
+	//open file for writing
+	printf("enter filename\n-->");
+	gets(filepath);
+	fptr=fopen(filepath,"w");	
+	if (!fptr){
+		printf("ERROR: could not open file [%s] for writing\n", filepath);
+		exit(-1);
+	}else{
+		fprintf(fptr,"t_set\tt_des\tpower\tt0\tt1\tt2\n");
+		printf("init success\nstarting program in 5 seconds\n");
+		printf("set t_des to -1000 to save data and exit\n");
+		sleep(5);
+	}
     return 0;
 }
 
@@ -136,25 +171,6 @@ int main(){
         FD_SET(STDIN_FILENO,&set);
         if (select(STDIN_FILENO+1,&set,NULL,NULL,&timeout)==1)
             user_input();
-        pid(); 
-        rcp = sub_pwm_set(handle,3,abs(op_mode));
-        if (op_mode>0) 
-            rc = sub_gpio_write(handle,0x00001000,&config,0x00001000);
-        else if (op_mode < 0)
-            rc = sub_gpio_write(handle,0x00000000,&config,0x00001000);
-        rca = sub_adc_read(handle,adc_buff,adc_mux,8);
-        analog_2_celcius(adc_buff);
-        //analog_2_celcius2(adc_buff);
-        if (z%10==0){
-            system("clear");
-            printf("p: %f\t i:%f\t d:%f\te:%f\n",prop,integ,deriv,(t_des-celcius[0]));
-            printf("t_des: %.1f\tpower: %d\tt0:%.1fC\tt1:%.1fC\tt2:%.1fC\n\n",t_des, op_mode, celcius[0], celcius[1],celcius[2]);
-            for (i=0;i<8;i++){
-                printf("%d\t",adc_buff[i]);
-            }
-            printf("\n");
-        }
-        
         if (celcius[0] > 80 || celcius[1] > 80 || celcius[2] > 40){
                 rcp = sub_pwm_set(handle,3,abs(op_mode));
                 printf("over 30 degrees celcius. setting pwm to 0...");
@@ -163,7 +179,35 @@ int main(){
                 else 
                     printf("done. PWM=0\n");
         }
-        
-	}
+		else {
+				pid(); 
+			//bang_bang();
+				rcp = sub_pwm_set(handle,3,abs(op_mode));
+			if (op_mode>0) 
+				rc = sub_gpio_write(handle,0x00001000,&config,0x00001000);
+			else if (op_mode < 0)
+				rc = sub_gpio_write(handle,0x00000000,&config,0x00001000);
+			rca = sub_adc_read(handle,adc_buff,adc_mux,8);
+			analog_2_celcius(adc_buff);
+			//analog_2_celcius2(adc_buff);
+			if (z%10==0){
+				system("clear");
+				//printf("p: %f\t i:%f\t d:%f\te:%f\n",prop,integ,deriv,(t_des-celcius[0]));
+				printf("t_set:%.1f\tt_des: %.1f\tpower: %d\tt0:%.1fC\tt1:%.1fC\tt2:%.1fC\tz:%d\n\n",
+				t_set,t_des,op_mode,celcius[0],celcius[1],celcius[2],z);
+				for (i=0;i<8;i++){
+				printf("%d\t",adc_buff[i]);
+				}
+				printf("\n");
+			}
+			//write status to file every 5 seconds
+			if (z%500==0)
+				fprintf(fptr,"%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%d\n",
+					t_set,t_des,op_mode,celcius[0],celcius[1],celcius[2],z);
+		}
+		if (t_des==-1000)
+			cont=1;
+    }
+	fclose(fptr);
     return 0;
 }
