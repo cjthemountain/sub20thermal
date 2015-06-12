@@ -59,12 +59,13 @@ int analog_2_celcius(int *adc_buff){
         old_celcius[i] = celcius[i];
     }
     i=0; j=0;
-    while (i<6){
+    while (i<8){
         volta =   (((double)adc_buff[i]))*3.3/1023;
         voltb = (((double)adc_buff[i+1]))*3.3/1023;
         celcius[j] =   ((volta-voltb)-1.245)/.005;
         i+=2; j+=1;
     }
+	celcius[2] = celcius[2]+0.7; //calibration
     return 0;
 }
 
@@ -161,7 +162,7 @@ int init_sub(){
 	}else{
 		printf("init success\nstarting program in 5 seconds\n");
 		printf("set t_des to -1000 to save data and exit\n");
-		fprintf(fptr,"op_error\tt_des\tt_actual\tpower\tinteg\tt0\tt1\tz\n");
+		fprintf(fptr,"PWM\tTdesired(C)\tcu plate(C)\tTECbottom(C)\tTECtop(C)\tTEMPamb(C)\ttime(sec)\n");
 		sleep(5);
 	}
     return 0;
@@ -218,10 +219,10 @@ int main(){
 			cont=1;
 		}
 
-		printf("op:%d\terror:%.1f\ttdes:%.1f\tt2:%.1f\ti:%.1f\tt0:%.1f\tt1:%.1f\ttime:%d\n",
-		op_mode,(t_set-celcius[2]),t_des,celcius[2],integ,celcius[0],celcius[1],z*(seconds+microseconds));
-		fprintf(fptr,"op:%d\terror:%.1f\ttdes:%.1f\tt2:%.1f\ti:%.1f\tt0:%.1f\tt1:%.1f\ttime:%d\n",
-				op_mode,(t_set-celcius[2]),t_des,celcius[2],integ,celcius[0],celcius[1],z*(seconds+microseconds));
+		printf("pwm:%d\ttdes:%.1f\tplate:%.1f\ti:%.1f\tbot:%.1f\ttop:%.1f\tamb%.1f\ttime:%d\n",
+		op_mode,t_des,celcius[2],integ,celcius[0],celcius[1],celcius[3],z*(seconds+microseconds));
+		fprintf(fptr,"%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%d\n",
+				op_mode,t_des,celcius[2],celcius[0],celcius[1],celcius[3],z*(seconds+microseconds));
 		//user exit condition, set desired temperature to -1000 to exit cleanly
 		if (t_des==-1000){
 			cont=1;
