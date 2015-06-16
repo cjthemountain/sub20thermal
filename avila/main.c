@@ -35,7 +35,6 @@ int bang_bang(){ //bang bang control
 }
 
 int pid(){//just integral for now
-	//integ becomes nan when t_des-celcius[2] is negative
 	if ((t_set - celcius[2]) > 0)
 		integ += pow( abs(t_set - celcius[2]), 2);
 
@@ -60,12 +59,12 @@ int analog_2_celcius(int *adc_buff){
     }
     i=0; j=0;
     while (i<8){
-        volta =   (((double)adc_buff[i]))*3.3/1023;
-        voltb = (((double)adc_buff[i+1]))*3.3/1023;
-        celcius[j] =   ((volta-voltb)-1.245)/.005;
+        volta = (((double)adc_buff[i]))  * 3.3 / 1023;
+        voltb = (((double)adc_buff[i+1]))* 3.3 / 1023;
+        celcius[j] =   ((volta-voltb) - 1.245) / .005;
         i+=2; j+=1;
     }
-	celcius[2] = celcius[2]+0.7; //calibration
+	celcius[2] = celcius[2]+0.7; //thermocouple calibration
     return 0;
 }
 
@@ -75,7 +74,7 @@ int user_input(){
     integ = 0.0;
     prop=0.0;
 	deriv = 0.0;
-	fprintf(fptr,"\nset t_des to %f\n\n",t_des);
+	//fprintf(fptr,"\nset t_des to %f\n\n",t_des);
     return 0;
 }
 
@@ -101,10 +100,10 @@ int init_sub(){
         return -3;
     }
     printf("product id:\t%s\n", pid_buff);
-    //configure analog circuits
+    
+	//configure analog circuits
     config = ADC_ENABLE;
     config|=ADC_REF_VCC;
-    //config|=ADC_REF_2_56;
     if ( (rc = sub_adc_config(handle, config)) !=0){
             printf("ERROR: couldn't set ADC flag\n");
             return -4;
@@ -118,14 +117,20 @@ int init_sub(){
         adc_mux[6] = ADC_S6;
         adc_mux[7] = ADC_S7;
     }
+
     //configure pwm
-    if ( (rc=sub_pwm_config(handle,pwm_res,pwm_limit))!=0 ){
+	rc=sub_pwm_config(handle,pwm_res,pwm_limit);
+	if (rc!=0){
             printf("ERROR: can't configure PWM\n");
             return -6;
-    } else {//configure output gpio (dir and pwm signal pins)
-    sub_gpio_config(handle,0x08001000,&config,0xFFFFFFFF);
-    printf("config: %08x\n",config);
-    }
+    } 
+	//configure output gpio (dir and pwm signal pins)
+	printf("pre-config: %08x\n",config);
+    rc = sub_gpio_config(handle,0x08001000,&config,0xFFFFFFFF);
+	if (rc!=0){
+		printf("failed to configure gpio pins\npost_config:%08x\n",config);
+	} 
+    
     printf("device configured\n");
 
     //setup for select (polling)
@@ -160,10 +165,11 @@ int init_sub(){
 		printf("ERROR: could not open file [%s] for writing\n", filepath);
 		exit(-1);
 	}else{
-		printf("init success\nstarting program in 5 seconds\n");
+		printf("init success\nstarting program in 2 seconds\n");
 		printf("set t_des to -1000 to save data and exit\n");
-		fprintf(fptr,"PWM\tTdesired(C)\tcu plate(C)\tTECbottom(C)\tTECtop(C)\tTEMPamb(C)\ttime(sec)\n");
-		sleep(5);
+		fprintf(fptr,"t0\tt1\tt2\tt3\tt_des\top_mode\ttime\n");
+		printf("t0\tt1\tt2\tt3\tt_des\top_mode\ttime\n");
+		sleep(2);
 	}
     return 0;
 }
@@ -188,41 +194,50 @@ int main(){
 		analog_2_celcius(adc_buff);
 
 
-		//check for overheat condition
-        if (celcius[0] > 80.0 || celcius[1] > 80.0 || celcius[2] > 60.0){
+		//if overheat condition failure, wait for "safe" temps before continuing to drive
+        if (celcius[0] > 60.0 || celcius[1] > 60.0 || celcius[2] > 60.0){
+				old_op_mode = op_mode;
 				op_mode = 0;
+				if (rcp = sub_pwm_set(handle,3,abs(op_mode)) != 0){
+					printf("could not set pwm during overheat crisis. Quitting...\n");
+					fprintf(fptr,"could not set pwm during overheat crisis. Quitting...\n");
+					cont=1;
+					exit(-1);
+				}
                 printf("above saftey cutoff temperature. pwm set to 0\n");
                 fprintf(fptr,"above saftey cutoff temperature. pwm set to 0\n");
-        }
-		
-		//set pwm signal and direction
-		old_op_mode = op_mode;		
-		//pid();
-		bang_bang();
-		if (rcp = sub_pwm_set(handle,3,abs(op_mode)) != 0){
-			printf("could not set pwm\n");
-			fprintf(fptr,"could not set pwm\n");
-			cont=1;
-		}
-		if ( (op_mode > 0) && (op_mode != old_op_mode) ) 
-			rc = sub_gpio_write(handle,0x00001000,&config,0x00001000);
+        } 
+		else {//set pwm signal and direction
+			old_op_mode = op_mode;		
+			//pid();
+			bang_bang();
+			if (rcp = sub_pwm_set(handle,3,abs(op_mode)) != 0){
+				printf("could not set pwm\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
+				fprintf(fptr,"could not set pwm\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
+				cont=1;
+			}
+			if ( (op_mode > 0) && (op_mode != old_op_mode) ) 
+				rc = sub_gpio_write(handle,0x00001000,&config,0x00001000);
 
-		if (rc!=0){
-			printf("failed setting direction\n");
-			cont=1;
-		}
-		if ( (op_mode < 0) && (op_mode != old_op_mode) )
-			rc = sub_gpio_write(handle,0x00000000,&config,0x00001000);
+			if (rc!=0){
+				printf("could not set dir\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
+				fprintf(fptr,"could not set dir\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
+				cont=1;
+			}
+			if ( (op_mode < 0) && (op_mode != old_op_mode) )
+				rc = sub_gpio_write(handle,0x00000000,&config,0x00001000);
 
-		if (rc!=0){
-			printf("failed setting direction\n");
-			cont=1;
+			if (rc!=0){
+				printf("could not set dir\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
+				fprintf(fptr,"could not set dir\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
+				cont=1;
+			}
 		}
 
-		printf("pwm:%d\ttdes:%.1f\tplate:%.1f\ti:%.1f\tbot:%.1f\ttop:%.1f\tamb%.1f\ttime:%d\n",
-		op_mode,t_des,celcius[2],integ,celcius[0],celcius[1],celcius[3],z*(seconds+microseconds));
-		fprintf(fptr,"%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%d\n",
-				op_mode,t_des,celcius[2],celcius[0],celcius[1],celcius[3],z*(seconds+microseconds));
+		printf("%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%d\t%d\n",
+				celcius[0],celcius[1],celcius[2],celcius[3],t_des,op_mode,z*(seconds+microseconds));
+		fprintf(fptr,"%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%d\t%d\n",
+				celcius[0],celcius[1],celcius[2],celcius[3],t_des,op_mode,z*(seconds+microseconds));
 		//user exit condition, set desired temperature to -1000 to exit cleanly
 		if (t_des==-1000){
 			cont=1;
