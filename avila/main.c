@@ -21,9 +21,9 @@ sub_device dev = NULL;
 sub_handle handle = NULL;
 
 int bang_bang(){ //bang bang control
-    if (t_des > celcius[2])
+    if (t_des > celcius[0])
        op_mode = bang_high;
-    else if (t_des < celcius[2])
+    else if (t_des < celcius[0])
         op_mode = bang_low;
 	else
 		op_mode = 0;
