@@ -9,72 +9,41 @@
 #include <sys/types.h>
 #include "../lib/libsub.h"
 
-int pwm_res = 20; //microseconds
-int pwm_limit = 255; //8bit, 100% duty cycle
-int cont,op_mode,old_op_mode,motor_dir,i,j,adc_buff[8],
+int pwm_res = 20,pwm_limit=255,cont,op_mode=0,old_op_mode,motor_dir,i,j,adc_buff[8],
 	adc_mux[8],rc,rca,rcp,config,found=0,serial_number=0,stat,z,
-	seconds=5,microseconds=0;
-double volta, voltb, prop, integ, deriv, t_des, t_set;
-char sn_buff[20], pid_buff[20];
-double celcius[4], old_celcius[4];
+	seconds=1,microseconds=0, bang_high=255, bang_low=-255;;
+double t_des, celcius[4], old_celcius[4];
+char sn_buff[20], pid_buff[20], filepath[1024];
 struct timeval timeout;
-char filepath[1024];
 FILE *fptr;
 fd_set set;
 sub_device dev = NULL;
 sub_handle handle = NULL;
 
 int bang_bang(){ //bang bang control
-    if (t_set > celcius[2])
-       op_mode = 254;
-    else if (t_set < celcius[2])
-        op_mode = -254;
+    if (t_des > celcius[2])
+       op_mode = bang_high;
+    else if (t_des < celcius[2])
+        op_mode = bang_low;
 	else
 		op_mode = 0;
     return op_mode;
 }
 
-int pid(){//just integral for now
-	if ((t_set - celcius[2]) > 0)
-		integ += pow( abs(t_set - celcius[2]), 2);
-
-	if ((t_set - celcius[2]) < 0)	
-		integ -= pow( abs(t_set - celcius[2]), 2);
-
-	if ((t_set-celcius[2])==0.0)
-		integ = 0;
-
-	if (integ >= 254.0)
-		integ = 254.0;
-	if (integ <= -254.0)
-		integ = -254.0;
-	op_mode = ( (int) (round(integ)) );
-
-	return op_mode;
-}
-
 int analog_2_celcius(int *adc_buff){
-    for (i=0;i<8;i++){
+    for (i=0;i<4;i++){
         old_celcius[i] = celcius[i];
     }
-    i=0; j=0;
-    while (i<8){
-        volta = (((double)adc_buff[i]))  * 3.3 / 1023;
-        voltb = (((double)adc_buff[i+1]))* 3.3 / 1023;
-        celcius[j] =   ((volta-voltb) - 1.245) / .005;
-        i+=2; j+=1;
+    j=0;
+    for (i=0;i<8;i+=2){
+        celcius[j] = 0.7369*(double)adc_buff[i]-289.77;
+        j++;
     }
-	celcius[2] = celcius[2]+0.7; //thermocouple calibration
     return 0;
 }
 
 int user_input(){
     scanf("%lf",&t_des);
-    t_set = 1.2924*t_des-3.5177; //best fit line from calibration study
-    integ = 0.0;
-    prop=0.0;
-	deriv = 0.0;
-	//fprintf(fptr,"\nset t_des to %f\n\n",t_des);
     return 0;
 }
 
@@ -140,20 +109,11 @@ int init_sub(){
     timeout.tv_usec= 0;
     printf("setup done, sec:%ld, usec:%ld\n",timeout.tv_sec,timeout.tv_usec);
 
-    //setup for PID
-    prop = 0.0;
-    deriv = 0.0;
-    integ = 0.0;
-	op_mode=0;
-
     //initialize celcius values    
     rca = sub_adc_read(handle,adc_buff,adc_mux,8);
     analog_2_celcius(adc_buff);
-    rca = sub_adc_read(handle,adc_buff,adc_mux,8);
-    analog_2_celcius(adc_buff);
-    t_des = celcius[2];
-	t_set = 1.2924*celcius[2]-3.5177; 
-	printf("inital values: t_des:%f\tt_set:%f\tc2:%f\n",t_des,t_set,celcius[2]);
+    t_des = celcius[0];
+	printf("inital values: t_des:%f\tc2:%f\n",t_des,celcius[2]);
 	
 	//open file for writing
 	printf("enter filename\n-->");
@@ -196,7 +156,6 @@ int main(){
 
 		//if overheat condition failure, wait for "safe" temps before continuing to drive
         if (celcius[0] > 60.0 || celcius[1] > 60.0 || celcius[2] > 60.0){
-				old_op_mode = op_mode;
 				op_mode = 0;
 				if (rcp = sub_pwm_set(handle,3,abs(op_mode)) != 0){
 					printf("could not set pwm during overheat crisis. Quitting...\n");
@@ -209,43 +168,45 @@ int main(){
         } 
 		else {//set pwm signal and direction
 			old_op_mode = op_mode;		
-			//pid();
 			bang_bang();
-			if (rcp = sub_pwm_set(handle,3,abs(op_mode)) != 0){
-				printf("could not set pwm\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
-				fprintf(fptr,"could not set pwm\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
-				cont=1;
-			}
-			if ( (op_mode > 0) && (op_mode != old_op_mode) ) 
-				rc = sub_gpio_write(handle,0x00001000,&config,0x00001000);
+            
+            //change pwm and dir only if different from old setting
+            if (op_mode != old_op_mode){
+                printf("changing pwm and dir\n");
+		    	//set pwm
+                rcp = sub_pwm_set(handle,3,abs(op_mode));
+                if (rcp!=0){
+                    printf("could not set pwm\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
+                    fprintf(fptr,"could not set pwm\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
+                    cont=1;
+                }
+                
+                //set direction
+                if (op_mode > 0) 
+                    rc = sub_gpio_write(handle,0x00001000,&config,0x00001000);
+                else 
+                    rc = sub_gpio_write(handle,0x00000000,&config,0x00001000);
 
-			if (rc!=0){
-				printf("could not set dir\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
-				fprintf(fptr,"could not set dir\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
-				cont=1;
-			}
-			if ( (op_mode < 0) && (op_mode != old_op_mode) )
-				rc = sub_gpio_write(handle,0x00000000,&config,0x00001000);
+                if (rc != 0) {
+                    printf("could not set dir\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
+                    fprintf(fptr,"could not set dir\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
+                    cont=1;
+                }
+		    }
 
-			if (rc!=0){
-				printf("could not set dir\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
-				fprintf(fptr,"could not set dir\t\t\t\t\t\t\t\t%d\n",z*(seconds+microseconds));
-				cont=1;
-			}
-		}
-
-		printf("%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%d\t%d\n",
-				celcius[0],celcius[1],celcius[2],celcius[3],t_des,op_mode,z*(seconds+microseconds));
-		fprintf(fptr,"%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%d\t%d\n",
-				celcius[0],celcius[1],celcius[2],celcius[3],t_des,op_mode,z*(seconds+microseconds));
-		//user exit condition, set desired temperature to -1000 to exit cleanly
-		if (t_des==-1000){
-			cont=1;
-			rcp = sub_pwm_set(handle,3,0);
-		}
-		if (z>10000)
-			z=0;//prevent integer rollover
+            printf("%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%d\t%d\n",
+                    celcius[0],celcius[1],celcius[2],celcius[3],t_des,op_mode,z*(seconds+microseconds));
+            fprintf(fptr,"%.1f\t%.1f\t%.1f\t%.1f\t%.1f\t%d\t%d\n",
+                    celcius[0],celcius[1],celcius[2],celcius[3],t_des,op_mode,z*(seconds+microseconds));
+            //user exit condition, set desired temperature to -1000 to exit cleanly
+            if (t_des==-1000){
+                cont=1;
+                rcp = sub_pwm_set(handle,3,0);
+            }
+            if (z>10000)
+                z=0;//prevent integer rollover
+        }
     }
-	fclose(fptr);
+    fclose(fptr);
     return 0;
 }
