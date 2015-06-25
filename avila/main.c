@@ -11,7 +11,7 @@
 
 int pwm_res = 20,pwm_limit=255,cont,op_mode=0,old_op_mode,motor_dir,i,j,adc_buff[8],
 	adc_mux[8],rc,rca,rcp,config,found=0,serial_number=0,stat,z,
-	seconds=1,microseconds=0, bang_high=255, bang_low=-255;;
+	seconds=1,microseconds=0, bang_high=254, bang_low=-254;;
 double t_des, celcius[4], old_celcius[4];
 char sn_buff[20], pid_buff[20], filepath[1024];
 struct timeval timeout;
@@ -172,7 +172,6 @@ int main(){
             
             //change pwm and dir only if different from old setting
             if (op_mode != old_op_mode){
-                printf("changing pwm and dir\n");
 		    	//set pwm
                 rcp = sub_pwm_set(handle,3,abs(op_mode));
                 if (rcp!=0){
